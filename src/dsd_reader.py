@@ -33,11 +33,20 @@ def read_info(path: str) -> DsdInfo:
     with open(path, "rb") as f:
         magic = f.read(4)
         f.seek(0)
-        if magic == b"DSD ":
-            return _read_dsf_info(f, path)
-        if magic == b"FRM8":
-            return _read_dff_info(f, path)
-    raise DsdFileError("This is not a DSF or DFF file.")
+        try:
+            if magic == b"DSD ":
+                info = _read_dsf_info(f, path)
+            elif magic == b"FRM8":
+                info = _read_dff_info(f, path)
+            else:
+                raise DsdFileError("This is not a DSF or DFF file.")
+        except struct.error:  # a header ends in the middle of a field
+            raise DsdFileError("The file is damaged or cut short.")
+        f.seek(0, 2)
+        file_size = f.tell()
+    if info.data_offset + info.data_size > file_size:
+        raise DsdFileError("The file is cut short: it ends before its audio does.")
+    return info
 
 
 def _read_dsf_info(f, path: str) -> DsdInfo:

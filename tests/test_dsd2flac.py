@@ -183,6 +183,53 @@ class DsdConverterTests(unittest.TestCase):
             open(os.path.join(out_dir, "song.flac"), "wb").close()
             self.assertEqual(_uop(src, out_dir), os.path.join(out_dir, "song (2).flac"))
 
+    def test_truncated_dsf_is_refused(self):
+        path = self._out_copy("cut.dsf")
+        shutil.copy(self.dsf, path)
+        os.truncate(path, os.path.getsize(path) // 2)
+        with self.assertRaises(DsdFileError):
+            read_info(path)
+
+    def test_truncated_dff_is_refused(self):
+        path = self._out_copy("cut.dff")
+        shutil.copy(self.dff, path)
+        os.truncate(path, os.path.getsize(path) // 2)
+        with self.assertRaises(DsdFileError):
+            read_info(path)
+
+    def test_dff_cut_inside_a_chunk_header_is_refused(self):
+        path = self._out_copy("header.dff")
+        with open(path, "wb") as f:
+            f.write(b"FRM8" + struct.pack(">Q", 100) + b"DSD " + b"PROP")
+        with self.assertRaises(DsdFileError):
+            read_info(path)
+
+    def test_mono_dff_with_odd_length_round_trips(self):
+        bits = tone_bits(0.05, 440.0, channels=1)[:, : 8 * 1001]   # 1001 bytes: odd, padded
+        path = self._out_copy("mono.dff")
+        write_dff(path, bits)
+        info = read_info(path)
+        self.assertEqual(info.channels, 1)
+        parts = [np.unpackbits(c, axis=1) for c in iter_channel_bytes(info, 4096)]
+        np.testing.assert_array_equal(np.concatenate(parts, axis=1)[:, : info.bits_per_channel], bits)
+
+    def test_four_channel_dsf_reads_back(self):
+        bits = tone_bits(0.05, 440.0, channels=4)
+        path = self._out_copy("quad.dsf")
+        write_dsf(path, bits)
+        info = read_info(path)
+        self.assertEqual(info.channels, 4)
+        parts = [np.unpackbits(c, axis=1, bitorder="little") for c in iter_channel_bytes(info, 4096)]
+        np.testing.assert_array_equal(np.concatenate(parts, axis=1)[:, : info.bits_per_channel], bits)
+
+    def test_352800_at_20_bits_writes_the_right_rate_and_depth(self):
+        out = self._out_copy("hi.dsf")
+        shutil.copy(self.dsf, out)
+        result = convert_file(out, Settings(sample_rate=352800, bit_depth=20, scale_db=0.0, dither=False))
+        info = sf.info(result.output)
+        self.assertEqual(info.samplerate, 352800)
+        self.assertEqual(info.subtype, "PCM_24")   # 20-bit is stored as 24-bit
+
     def test_bad_sample_rate_is_refused(self):
         with self.assertRaises(DsdFileError):
             convert_file(self.dsf, Settings(sample_rate=96000))  # 2822400 is not a multiple

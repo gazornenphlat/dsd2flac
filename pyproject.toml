@@ -21,4 +21,4 @@ DSD2FLAC = "main:run"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-py-modules = ["main", "gui", "converter", "dsd_reader"]
+py-modules = ["main", "gui", "converter", "dsd_reader", "original_taps"]
