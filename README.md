@@ -12,12 +12,13 @@ It is a Python port of the original Linux `dsf2flac` converter. The conversion f
 - Copies artist, album, title, track and year tags when the source has them.
 - Never overwrites an existing file. A number is added instead, e.g. `track (2).flac`.
 - Output goes beside each source file, or into a folder you choose.
+- Shows progress and an estimate of the time left for each file.
 
 ## Use it
 
-Download or build `DSD2FLAC.exe` (see below), then run it.
+Download `DSD2FLAC.exe` from the latest successful run on the repository's **Actions** tab (the `DSD2FLAC` artifact), or build it yourself (see below). Then run it.
 
-1. Click **Add files…** and choose one or more `.dsf` or `.dff` files.
+1. Click **Add files…** and choose one or more `.dsf` or `.dff` files, or drag them onto the list.
 2. Choose the sample rate, bit depth and volume. The defaults match the original: 88.2 kHz, 24-bit, +4 dB.
 3. Optionally set **Save to** to a folder. Leave it blank to save beside each source file.
 4. Click **Convert**.
@@ -76,7 +77,9 @@ Not verified:
 | `src/original_taps.py` | Filter tables copied from the original program |
 | `tools/extract_taps.py` | Extracts the filter tables from the original binary |
 | `tests/test_dsd2flac.py` | Self-checks |
-| `checks/` | Reference recordings and window screenshots |
+| `assets/app.ico` | The window and program icon |
+| `checks/ref/` | Reference recordings |
+| `docs/screenshots/` | Window screenshots |
 | `MECHANICS.md` | How each rule works, with its address in the original program |
 
 ## Differences from the original

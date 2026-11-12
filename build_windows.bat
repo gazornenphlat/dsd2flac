@@ -11,7 +11,7 @@ if not exist "%WORK%\venv\Scripts\python.exe" (
 set "PY=%WORK%\venv\Scripts\python.exe"
 "%PY%" -m pip install -r requirements.txt || goto :fail
 "%PY%" -m unittest discover -s tests || goto :fail
-"%PY%" -m PyInstaller --noconfirm --onefile --windowed --name DSD2FLAC --distpath dist --workpath "%WORK%\pyi" --specpath "%WORK%" src\main.py || goto :fail
+"%PY%" -m PyInstaller --noconfirm --onefile --windowed --name DSD2FLAC --icon "%~dp0assets\app.ico" --add-data "%~dp0assets\app.ico;assets" --collect-all tkinterdnd2 --distpath dist --workpath "%WORK%\pyi" --specpath "%WORK%" src\main.py || goto :fail
 echo.
 echo Done: dist\DSD2FLAC.exe
 exit /b 0

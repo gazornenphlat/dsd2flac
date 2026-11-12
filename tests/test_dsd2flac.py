@@ -271,5 +271,42 @@ class DsdConverterTests(unittest.TestCase):
         np.testing.assert_array_equal(got[pre:] >> 8, expected.astype(np.int64))
 
 
+try:
+    import tkinter
+    import gui
+except ImportError:      # no Tk on this computer: the window checks are skipped
+    gui = None
+
+
+@unittest.skipIf(gui is None, "tkinter is not available")
+class WindowTests(unittest.TestCase):
+    def test_time_left_text(self):
+        self.assertEqual(gui._time_left(0.01, 5.0), "")            # too early to tell
+        self.assertEqual(gui._time_left(0.5, 10.0), " — about 10 s left")
+        self.assertEqual(gui._time_left(0.25, 60.0), " — about 3 min left")
+        self.assertEqual(gui._time_left(1.0, 10.0), "")
+
+    def test_window_opens_and_takes_dropped_files(self):
+        try:
+            app = gui.App()
+        except tkinter.TclError as err:
+            self.skipTest(f"no display: {err}")
+        try:
+            app.update()
+            with tempfile.TemporaryDirectory() as d:
+                good = os.path.join(d, "tone.dsf")
+                write_dsf(good, tone_bits(0.02, 440.0))
+                other = os.path.join(d, "notes.txt")
+                open(other, "w").close()
+
+                class Drop:
+                    data = app.tk.call("list", good, other)
+                app._on_drop(Drop)
+                self.assertEqual(list(app._files.values()), [good])
+                self.assertIsNone(app._read_settings().out_dir)
+        finally:
+            app.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import os
 import queue
+import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from converter import SAMPLE_RATES, Cancelled, Settings, convert_file
 from dsd_reader import DsdFileError, read_info
+
+try:  # drag and drop is optional: the window works without it
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+except Exception:  # not installed, or its Tk extension is missing
+    DND_FILES = TkinterDnD = None
 
 APP_TITLE = "DSD to FLAC"
 VERSION = "1.0"
@@ -30,7 +37,7 @@ LINE = "#D9E0EA"
 LOG_BG = "#0F172A"
 LOG_FG = "#E2E8F0"
 
-HELP_TEXT = """Choose one or more .dsf or .dff files. Each one is saved as a .flac file in the same folder. The original file is never changed.
+HELP_TEXT = """Choose one or more .dsf or .dff files with Add files…, or drag them onto the list. Each one is saved as a .flac file in the same folder, or in the "Save to" folder if you set one. The original file is never changed.
 
 Sample rate: the rate of the FLAC output. 88.2 kHz is the usual choice; 176.4 and 352.8 kHz keep more of the top of the range but make bigger files.
 
@@ -45,6 +52,16 @@ DoP mode: keeps the raw DSD data inside the FLAC file instead of converting it t
 Artist, album, title, track and year tags are copied across when the file has them. DST-compressed DFF files cannot be converted."""
 
 
+def _time_left(fraction: float, elapsed: float) -> str:
+    """' — about 12 s left' for the current file, or '' while it is too early to tell."""
+    if fraction < 0.05 or fraction >= 1.0 or elapsed < 1.0:
+        return ""
+    seconds = elapsed * (1.0 - fraction) / fraction
+    if seconds < 60:
+        return f" — about {max(1, round(seconds))} s left"
+    return f" — about {round(seconds / 60)} min left"
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -56,12 +73,45 @@ class App(tk.Tk):
         self._events: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
+        self._file_started = 0.0     # when the current file began, for the time estimate
+        self._file_label = ""
+        self._set_icon()
         self._apply_style()
         self._build()
+        self._enable_drop()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(80, self._poll)
 
     # ----- look -----------------------------------------------------------
+
+    def _set_icon(self) -> None:
+        """Use assets/app.ico for the window (beside the code, or inside the built .exe)."""
+        base = getattr(sys, "_MEIPASS", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+        try:
+            self.iconbitmap(os.path.join(base, "assets", "app.ico"))
+        except tk.TclError:
+            pass  # no icon file, or not on Windows: keep the default
+
+    def _enable_drop(self) -> None:
+        """Let files be dragged onto the list, when tkinterdnd2 is available."""
+        if TkinterDnD is None:
+            return
+        try:
+            TkinterDnD._require(self)
+            self.tree.drop_target_register(DND_FILES)
+            self.tree.dnd_bind("<<Drop>>", self._on_drop)
+        except Exception:
+            pass  # the extension did not load: Add files… still works
+
+    def _on_drop(self, event) -> None:
+        added = 0
+        for path in self.tk.splitlist(event.data):
+            if os.path.isfile(path) and path.lower().endswith((".dsf", ".dff")):
+                before = len(self._files)
+                self._add_one(path)
+                added += len(self._files) - before
+        if added:
+            self._status.set(f"{len(self._files)} file(s) in the list.")
 
     def _apply_style(self) -> None:
         style = ttk.Style(self)
@@ -355,10 +405,13 @@ class App(tk.Tk):
                 kind = event[0]
                 if kind == "start":
                     _, number, total, name = event
-                    self._status.set(f"Converting {name} ({number} of {total})")
+                    self._file_label = f"Converting {name} ({number} of {total})"
+                    self._file_started = time.monotonic()
+                    self._status.set(self._file_label)
                     self._bar["value"] = 0
                 elif kind == "progress":
                     self._bar["value"] = event[1] * 100
+                    self._status.set(self._file_label + _time_left(event[1], time.monotonic() - self._file_started))
                 elif kind == "done":
                     _, path, output, clipped, warning = event
                     self._log(f"Saved {os.path.basename(output)}")

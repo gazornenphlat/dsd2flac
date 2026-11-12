@@ -13,4 +13,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
-      - run: python -m unittest discover -s tests
+      - run: python -m unittest discover -s tests -v
+      - name: Build DSD2FLAC.exe
+        shell: cmd
+        run: build_windows.bat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSD2FLAC
+          path: dist/DSD2FLAC.exe
