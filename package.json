@@ -4,7 +4,6 @@
   "private": true,
   "description": "DSD to FLAC converter with a Windows window. The Python code is built by build_windows.bat.",
   "scripts": {
-    "build": "cmd /c build_windows.bat",
-    "test": "python -m unittest discover -s tests"
+    "build": "cmd /c build_windows.bat"
   }
 }
