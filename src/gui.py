@@ -10,7 +10,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from converter import SAMPLE_RATES, Cancelled, Settings, convert_file
+from converter import SAMPLE_RATES, Cancelled, Settings, convert_file, supported_outputs
 from dsd_reader import DsdFileError, read_info
 
 try:  # drag and drop is optional: the window works without it
@@ -283,7 +283,7 @@ class App(tk.Tk):
             self._status.set(f"{len(self._files)} file(s) in the list.")
 
     def _add_one(self, path: str) -> None:
-        if path in self._files.values():
+        if os.path.normcase(path) in (os.path.normcase(p) for p in self._files.values()):
             return
         try:
             info = read_info(path)
@@ -291,6 +291,20 @@ class App(tk.Tk):
             self._log(f"Skipped {os.path.basename(path)}: {err}")
             return
         rate = DSD_NAMES.get(info.dsd_rate, f"{info.dsd_rate / 1e6:.4f} MHz")
+        # Refuse now, with the combination that would work, instead of failing
+        # the file at Convert time with the generic rate error.
+        pcm_rates, dop_ok = supported_outputs(info.dsd_rate)
+        out_rate = SAMPLE_RATES[self.rate_box.current()]
+        compatible = dop_ok if self.dop.get() else out_rate in pcm_rates
+        if not compatible:
+            works = [f"{r / 1000:.1f} kHz PCM" for r in pcm_rates]
+            if dop_ok:
+                works.append("DoP")
+            hint = (f" — it only converts as {', '.join(works)}" if works
+                    else " — no supported output exists for it")
+            self._log(f"Skipped {os.path.basename(path)}: {rate} cannot be converted "
+                      f"with the current settings{hint}.")
+            return
         kind = "stereo" if info.channels == 2 else f"{info.channels} channels"
         seconds = info.bits_per_channel / info.dsd_rate
         length = f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
@@ -323,9 +337,12 @@ class App(tk.Tk):
 
     def _read_settings(self) -> Settings:
         try:
-            volume = int(float(self.volume.get()))
+            volume = float(self.volume.get())
         except ValueError:
             raise ValueError("Volume must be a whole number of dB from -6 to 6.")
+        if volume != int(volume):
+            raise ValueError("Volume must be a whole number of dB from -6 to 6.")
+        volume = int(volume)
         if not -6 <= volume <= 6:
             raise ValueError("Volume must be from -6 to 6 dB.")
         out_dir = self.out_dir.get().strip() or None

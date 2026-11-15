@@ -32,6 +32,18 @@ PHASE = 7               # output sample m is the filter at DSD bit 7 + factor*m
 PREROLL_BITS = 32768    # 4096 bytes of idle DSD before the audio: the original's buffer
 DOP_RATES = {2822400: 176400, 5644800: 352800}   # DSD rate -> DoP sample rate
 DOP_LEAD_IN_FRAMES = 2048   # idle DoP frames before the audio
+
+
+def supported_outputs(dsd_rate: int) -> tuple[list[int], bool]:
+    """PCM output rates and DoP support for a DSD rate.
+
+    A PCM combination works when the DSD rate divides by the output rate to a
+    factor the original's filter provides (8, 16 or 32). DSD256 therefore
+    converts, but only at 352.8 kHz; DSD128 refuses 88.2 kHz (factor 64).
+    """
+    pcm = [out for out in SAMPLE_RATES
+           if dsd_rate % out == 0 and dsd_rate // out in FILTERS]
+    return pcm, dsd_rate in DOP_RATES
 CHUNK_BYTES = 1 << 16       # bytes per channel read at a time
 IDLE_BYTE = 0x69            # the DSD idle pattern: the history before the start is this, not zero
 

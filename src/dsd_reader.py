@@ -63,6 +63,8 @@ def _read_dsf_info(f, path: str) -> DsdInfo:
      block_size, _reserved) = struct.unpack("<6IQ2I", fmt[12:52])
     if format_id != 0:
         raise DsdFileError("The DSF file is not raw DSD audio.")
+    if bits not in (1, 8):
+        raise DsdFileError("The DSF format block has an unsupported bits-per-sample value.")
     if channels < 1 or rate <= 0 or block_size <= 0 or sample_count <= 0:
         raise DsdFileError("The DSF format block has impossible values.")
     dhead = f.read(12)
@@ -91,6 +93,8 @@ def _read_dff_info(f, path: str) -> DsdInfo:
         cid = f.read(4)
         (csize,) = struct.unpack(">Q", f.read(8))
         body = pos + 12
+        if body + csize > end:
+            raise DsdFileError("The DFF file has a chunk that runs past the end of the file.")
         if cid == b"PROP":
             f.seek(body)
             rate, channels, compression = _parse_prop(f.read(csize))
@@ -101,11 +105,16 @@ def _read_dff_info(f, path: str) -> DsdInfo:
         pos = body + csize + (csize & 1)
     if rate is None or channels is None or data_offset is None:
         raise DsdFileError("The DFF file is missing its properties or audio.")
+    if rate <= 0 or channels < 1 or data_size <= 0:
+        raise DsdFileError("The DFF properties or audio have impossible values.")
+    bits_per_channel = (data_size // channels) * 8
+    if bits_per_channel <= 0:
+        raise DsdFileError("The DFF file has no audio samples.")
     if compression not in (None, b"DSD "):
         raise DsdFileError("This DFF file is DST-compressed, which this version cannot convert.")
     return DsdInfo(
         path=path, kind="DFF", dsd_rate=rate, channels=channels,
-        bits_per_channel=(data_size // channels) * 8, data_offset=data_offset,
+        bits_per_channel=bits_per_channel, data_offset=data_offset,
         data_size=data_size, block_size=1, lsb_first=False,
     )
 
