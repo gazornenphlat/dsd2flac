@@ -16,10 +16,11 @@ import soundfile as sf
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from converter import (DOP_LEAD_IN_FRAMES, FILTERS, PHASE, PREROLL_BITS, Settings,  # noqa: E402
-                       _pick_filter, convert_file, unique_output_path)
+                       _pick_filter, convert_file, supported_outputs, unique_output_path)
 from dsd_reader import DsdFileError, iter_channel_bytes, read_info  # noqa: E402
 
 DSD64 = 2822400
+DSD256 = 11289600
 
 
 def sigma_delta(signal: np.ndarray) -> np.ndarray:
@@ -42,7 +43,7 @@ def tone_bits(seconds: float, freq: float, channels: int = 2) -> np.ndarray:
     return np.stack(bits)
 
 
-def write_dsf(path: str, bits: np.ndarray, rate: int = DSD64) -> None:
+def write_dsf(path: str, bits: np.ndarray, rate: int = DSD64, bits_field: int = 1) -> None:
     """DSF: bits least-significant first, channel blocks of 4096 bytes."""
     channels, n = bits.shape
     block = 4096
@@ -51,16 +52,22 @@ def write_dsf(path: str, bits: np.ndarray, rate: int = DSD64) -> None:
     padded = np.zeros((channels, rows * block), np.uint8)
     padded[:, : per_channel.shape[1]] = per_channel
     data = padded.reshape(channels, rows, block).transpose(1, 0, 2).tobytes()
-    fmt = struct.pack("<6IQ2I", 1, 0, 2, channels, rate, 1, n, block, 0)
+    fmt = struct.pack("<6IQ2I", 1, 0, 2, channels, rate, bits_field, n, block, 0)
     data_chunk = b"data" + struct.pack("<Q", 12 + len(data)) + data
     head = b"DSD " + struct.pack("<QQQ", 28, 28 + 52 + len(data_chunk), 0)
     with open(path, "wb") as f:
         f.write(head + b"fmt " + struct.pack("<Q", 52) + fmt + data_chunk)
 
 
-def write_dff(path: str, bits: np.ndarray, rate: int = DSD64, compression: bytes = b"DSD ") -> None:
-    """DSDIFF: bits most-significant first, bytes interleaved across channels."""
-    channels, _ = bits.shape
+def write_dff(path: str, bits: np.ndarray, rate: int = DSD64, compression: bytes = b"DSD ",
+              channels: int | None = None) -> None:
+    """DSDIFF: bits most-significant first, bytes interleaved across channels.
+
+    `channels` overrides the channel count written in the header, so malformed
+    headers (e.g. 0 channels) can be built for the refusal tests.
+    """
+    if channels is None:
+        channels = bits.shape[0]
     payload = np.stack([np.packbits(b) for b in bits]).T.tobytes()
     ids = b"".join([b"SLFT", b"SRGT"][:channels])
     chnl = struct.pack(">H", channels) + ids
@@ -170,6 +177,54 @@ class DsdConverterTests(unittest.TestCase):
         write_dff(path, self.bits[:, :800], compression=b"DST ")
         with self.assertRaises(DsdFileError):
             read_info(path)
+
+    def test_dff_zero_channels_is_refused(self):
+        # Before the fix this divided by the channel count (ZeroDivisionError).
+        path = self._out_copy("nochan.dff")
+        write_dff(path, self.bits[:, :800], channels=0)
+        with self.assertRaises(DsdFileError):
+            read_info(path)
+
+    def test_dff_zero_rate_is_refused(self):
+        path = self._out_copy("norate.dff")
+        write_dff(path, self.bits[:, :800], rate=0)
+        with self.assertRaises(DsdFileError):
+            read_info(path)
+
+    def test_dff_chunk_past_form_end_is_refused(self):
+        path = self._out_copy("bigchunk.dff")
+        write_dff(path, self.bits[:, :800])
+        with open(path, "r+b") as f:
+            f.seek(20)  # PROP chunk size, right after the 16-byte FRM8 header
+            f.write(struct.pack(">Q", 10 ** 9))
+        with self.assertRaises(DsdFileError):
+            read_info(path)
+
+    def test_dsf_bits_must_be_1_or_8(self):
+        path = self._out_copy("bits3.dsf")
+        write_dsf(path, self.bits[:, :8000], bits_field=3)
+        with self.assertRaises(DsdFileError):
+            read_info(path)
+        ok = self._out_copy("bits8.dsf")
+        write_dsf(ok, self.bits[:, :8000], bits_field=8)
+        self.assertFalse(read_info(ok).lsb_first)
+
+    def test_dsd256_converts_only_at_352800(self):
+        self.assertEqual(supported_outputs(DSD64), ([88200, 176400, 352800], True))
+        self.assertEqual(supported_outputs(DSD64 * 2), ([176400, 352800], True))
+        self.assertEqual(supported_outputs(DSD256), ([352800], False))
+        rng = np.random.default_rng(7)
+        bits = rng.integers(0, 2, size=(1, 98800), dtype=np.uint8)
+        path = self._out_copy("dsd256.dsf")
+        write_dsf(path, bits, rate=DSD256)
+        with self.assertRaises(DsdFileError):
+            convert_file(path, Settings(sample_rate=88200))
+        with self.assertRaises(DsdFileError):
+            convert_file(path, Settings(dop=True))
+        result = convert_file(path, Settings(sample_rate=352800, bit_depth=24,
+                                             scale_db=0.0, dither=False))
+        self.assertEqual(sf.info(result.output).samplerate, 352800)
+        os.remove(result.output)
 
     def test_output_goes_to_the_chosen_folder(self):
         import tempfile as _tf

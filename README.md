@@ -29,8 +29,8 @@ Options:
 
 Notes and limits:
 - **20-bit output is a 24-bit FLAC file.** The FLAC writer used here cannot store 20 bits, so the low four bits are empty. The sound is the same, but the file reports 24-bit.
-- **PCM rate combinations:** DSD64 input works at 88.2, 176.4 and 352.8 kHz. DSD128 at 352.8 kHz is untested. DSD128 at 88.2 kHz is refused.
-- **DoP** works only for DSD64 (output 176.4 kHz) and DSD128 (output 352.8 kHz).
+- **PCM rate combinations:** DSD64 input works at 88.2, 176.4 and 352.8 kHz. DSD128 at 352.8 kHz is untested. DSD128 at 88.2 kHz is refused. DSD256 converts only at 352.8 kHz.
+- **DoP** works only for DSD64 (output 176.4 kHz) and DSD128 (output 352.8 kHz). DSD256 is not supported in DoP mode.
 - **DST-compressed DFF files are refused** with a message. The original can read them.
 - The last ~11.6 ms of each recording is kept. The original drops it.
 
